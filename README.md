@@ -2,115 +2,36 @@
 
 A Python implementation of a Kafka-like message broker
 
-## Progress
+## Stage 2: Request Parsing
 
-### Stage 1: Basic Server Response
+Parse Kafka request messages to extract correlation_id and use it in responses.
 
-**Goal**: Create a server that listens on port 9092 and responds to any client request with a specific binary response.
-
-**Implementation Details**:
-
-The server implements the following behavior:
-
-1. **Listen on port 9092**: Uses `socket.create_server()` to create a TCP server
-2. **Accept client connections**: Handles incoming connections in a loop
-3. **Read client requests**: Receives up to 1024 bytes from each client
-4. **Send binary response**: Responds with an 8-byte binary message containing:
-   - `message_size` (4 bytes): Set to 0 for this stage
-   - `correlation_id` (4 bytes): Set to 7 (required by challenge)
-
-**Response Format**:
+### Request Format
 
 ```
-Bytes 0-3:   message_size = 0    (big-endian 32-bit integer)
-Bytes 4-7:   correlation_id = 7  (big-endian 32-bit integer)
+message_size (4 bytes) + request_api_key (2 bytes) + request_api_version (2 bytes) + correlation_id (4 bytes) + ...
 ```
 
-**Binary Response**: `00 00 00 00 00 00 00 07`
-
-## How to Run
-
-### Prerequisites
-
-- Python 3.8+ (required for `socket.create_server()`)
-- netcat (nc) for testing
-
-### Running the Server
-
-1. Start the Kafka broker:
-
-   ```bash
-   python3 main.py
-   ```
-
-   You should see:
-
-   ```
-   Logs from your program will appear here!
-   Server listening on localhost:9092
-   ```
-
-2. In another terminal, test the connection:
-
-   ```bash
-   # Basic test (no visible output)
-   echo -n "test" | nc localhost 9092
-
-   # Test with hex dump to see the response
-   echo -n "test" | nc localhost 9092 | hexdump -C
-   ```
-
-### Expected Output
-
-When a client connects, the server logs:
+### Response Format
 
 ```
-Client connected from ('127.0.0.1', 54321)
-Received request: b'test'
-Sent response: 0000000000000007
-Client disconnected
+message_size (4 bytes) + correlation_id (4 bytes)
 ```
 
-The client receives the binary response: `00 00 00 00 00 00 00 07`
+### Implementation
 
-## Technical Implementation
+- Parses request header v2 to extract correlation_id
+- Uses extracted correlation_id in response
+- Falls back to default correlation_id=7 if parsing fails
 
-### Socket Programming
-
-- Uses Python's `socket` module for TCP communication
-- `socket.create_server()` creates a server socket bound to localhost:9092
-- `reuse_port=True` allows port reuse for testing
-
-### Binary Data Handling
-
-- Uses `struct.pack('>ii', message_size, correlation_id)` for big-endian encoding
-- `'>ii'` format: two 32-bit signed integers in big-endian byte order
-- Response is exactly 8 bytes as required by Kafka protocol
-
-### Error Handling
-
-- Basic exception handling for socket operations
-- Graceful handling of client disconnections
-- Server continues running after each client connection
-
-## Testing
-
-### Manual Testing
+### Testing
 
 ```bash
-# Test 1: Basic connection
-echo -n "hello" | nc localhost 9092
+# Start server
+python3 main.py
 
-# Test 2: View binary response
-echo -n "hello" | nc localhost 9092 | hexdump -C
-
-# Test 3: Multiple connections
-for i in {1..3}; do echo -n "test$i" | nc localhost 9092 & done
+# Test with example request
+echo -n "00000023001200046f7fc66100096b61666b612d636c69000a6b61666b612d636c6904302e3100" | xxd -r -p | nc localhost 9092 | hexdump -C
 ```
 
-### Expected Test Results
-
-- All connections should succeed
-- Server should log each connection
-- Each client should receive the same 8-byte response
-- Response should be: `00 00 00 00 00 00 00 07`
+Expected response: `00 00 00 00 6f 7f c6 61`
